@@ -16,10 +16,11 @@ public class Client {
         in = new BufferedReader(new InputStreamReader(clientSocket.getInputStream()));
     }
 
-    public String sendMessage(String msg) throws IOException{
+    public void sendMessage(String msg) {
         out.println(msg);
-        String resp = in.readLine();
-        return resp;
+    }
+    public String receiveMessage() throws IOException{
+        return in.readLine();
     }
 
     public void stopConnection() throws IOException{
@@ -32,8 +33,21 @@ public class Client {
         Client client = new Client();
         try {
             client.startConnection("localhost", 6969);
-            String r = client.sendMessage("NiceToEatYou");
-            System.out.println(r);
+            System.out.println("Sending authentication token");
+            client.sendMessage("NiceToEatYou");
+
+        } catch(IOException e){
+            e.printStackTrace();
+        }
+        try {
+            System.out.println("Sending ");
+            client.sendMessage("I WANT ALL");
+            System.out.println("Awaiting server index files");
+            String r = client.receiveMessage();
+            System.out.println("Server has " + r);
+            System.out.println("Sending needed files");
+            System.out.println(client.receiveMessage());
+
         } catch(IOException e){
             e.printStackTrace();
         }
