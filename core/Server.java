@@ -1,3 +1,5 @@
+package core;
+
 import javax.security.sasl.AuthenticationException;
 import java.net.*;
 import java.io.*;
@@ -51,7 +53,7 @@ public class Server {
 
     private boolean isAuth(String authToken) {
         try {
-            FileReader f = new FileReader("token.txt", StandardCharsets.UTF_8);
+            FileReader f = new FileReader("resources/token.txt", StandardCharsets.UTF_8);
 
             char[] token = new char[100];
             f.read(token);

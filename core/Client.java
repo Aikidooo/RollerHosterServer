@@ -1,5 +1,9 @@
+package core;
+
 import java.net.*;
 import java.io.*;
+
+//THIS IS JUST TEMPORARY TEST CLIENT FOR TESTING THE SERVER!!!
 
 public class Client {
     private Socket clientSocket;
