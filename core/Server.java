@@ -47,13 +47,17 @@ public class Server {
     }
 
     private String receive() throws IOException{
-        byte[] data = in.readAllBytes();
+        byte[] rawData = new byte[10000];
+        int readNum = in.read(rawData);
+        byte[] data = Arrays.copyOfRange(rawData, 0, readNum);
+
+
         short packetLength = (short)(((short)data[0] << 8) | (short) data[1]); //Probably no work
         byte state = data[2];
         short cookie = (short)(((short)data[3] << 8) | (short) data[4]); //Probably also no work
         byte[] content = Arrays.copyOfRange(data, 5, data.length);
 
-        if(!isValidCookie(cookie)) stop();
+        if(!isValidCookie(cookie) && state != States.Authentication) stop();
 
         return new String(content, StandardCharsets.UTF_8);
     }
@@ -70,6 +74,7 @@ public class Server {
 
         //Stage Authentication
         String authentication = receive();
+        System.out.println(authentication);
         if(!isAuth(authentication)){
             System.out.println("Client is not authenticated, quitting...");
             stop();
@@ -137,11 +142,11 @@ public class Server {
             }
         }
 
-        try{
+        /*try{
             server.runProtocol();
         } catch (IOException e){
             e.printStackTrace();
-        }
+        }*/
         System.out.println("Finished Interaction");
 
     }
