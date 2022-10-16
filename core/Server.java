@@ -1,17 +1,15 @@
 package core;
 
-import core.fields.States;
+import core.fields.*;
 
 import java.net.*;
 import java.io.*;
-import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
 import java.util.Arrays;
-import java.util.Random;
-import java.util.stream.Stream;
 
+//GitHub: https://github.com/Aikidooo/RollerHoster
+//Protocol reference:  https://github.com/Aikidooo/RollerHoster/blob/master/protocoll.txt
 
 public class Server {
     private ServerSocket server;
@@ -19,70 +17,72 @@ public class Server {
     private OutputStream out;
     private BufferedInputStream in;
 
+
     private static final int PORT = 6969;
     private short cookie = 0b0000000000000000;
 
     private void send(String content, byte state) throws IOException{
         byte[] bContent = content.getBytes(StandardCharsets.UTF_8);
+        System.out.println(new String(bContent, StandardCharsets.UTF_8));
 
-        byte[] payload = new byte[ByteUtils.PAYLOAD_LENGTH];
+        Packet packet = new Packet((short)(ByteUtils.PAYLOAD_LENGTH + content.length()), state, cookie, bContent);
 
-        short packetLength = (short)(ByteUtils.PAYLOAD_LENGTH + bContent.length);
-        short cookie = 0b0000000000000000; //not necessary in send
-
-        String binaryPacketLength = Integer.toBinaryString(0xFFFF & packetLength);
-        String binaryCookie = "0000000000000000";
-
-        payload[0] = Byte.parseByte(binaryPacketLength.substring(0, 8));
-        payload[1] = Byte.parseByte(binaryPacketLength.substring(8, 16));
-        payload[2] = state;
-        payload[3] = Byte.parseByte(binaryCookie.substring(0, 8));
-        payload[4] = Byte.parseByte(binaryCookie.substring(8, 16));
-
-        //Concatenating payload and contents together
-        byte[] both = Arrays.copyOf(payload, payload.length + bContent.length);
-        System.arraycopy(bContent, 0, both, payload.length, bContent.length);
-
-        out.write(both);
+        out.write(packet.get());
     }
 
-    private String receive() throws IOException{
+    private void send(Packet packet) throws IOException{
+        out.write(packet.get());
+    }
+
+    private Packet receive() throws IOException{
         byte[] rawData = new byte[10000];
         int readNum = in.read(rawData);
         byte[] data = Arrays.copyOfRange(rawData, 0, readNum);
 
+        Packet packet = new Packet(data);
 
-        short packetLength = (short)(((short)data[0] << 8) | (short) data[1]); //Probably no work
-        byte state = data[2];
-        short cookie = (short)(((short)data[3] << 8) | (short) data[4]); //Probably also no work
-        byte[] content = Arrays.copyOfRange(data, 5, data.length);
+        if(!isValidCookie(packet.getShortCookie()) && packet.state != States.Authentication) {
+            stop();
+        }
 
-        if(!isValidCookie(cookie) && state != States.Authentication) stop();
-
-        return new String(content, StandardCharsets.UTF_8);
+        return packet;
     }
 
-    public boolean start(int port) throws IOException{
-        System.out.println("Waiting for connection");
+    public void start(int port) throws IOException{
         server = new ServerSocket(port);
-        clientSocket = server.accept();
+        System.out.println("Waiting for connection");
+    }
 
+    public void connect() throws IOException {
+        clientSocket = server.accept();
         System.out.println("Client " + clientSocket.getInetAddress() + " connected");
 
         in = new BufferedInputStream(clientSocket.getInputStream());
         out = clientSocket.getOutputStream();
+    }
 
-        //Stage Authentication
-        String authentication = receive();
-        System.out.println(authentication);
-        if(!isAuth(authentication)){
+    //Protocol (0:X)
+    public boolean authenticate() throws IOException{
+        //(0:1)
+        String token = receive().getStringData();
+        System.out.println(token);
+        if(!isAuth(token)){
             System.out.println("Client is not authenticated, quitting...");
-            stop();
             return false;
         }
         System.out.println("Client authenticated successfully");
         cookie = generateCookie();
+
+        //(0:2)
         send(Short.toString(cookie), States.Authentication);
+        return true;
+    }
+
+    public boolean fileTreeExchange() throws IOException{
+
+        String contents = Files.readString(Paths.get("resources/FileIndex.txt"));
+        System.out.println("Sending filetree to Client");
+        send(new String(contents), States.SyncCheck);
         return true;
     }
 
@@ -119,29 +119,35 @@ public class Server {
     }
 
     public void runProtocol() throws IOException{
-        //Stage send File Indexes
-        String contents = Files.readString(Paths.get("resources/FileIndex.txt"));
-        System.out.println("Sending file indexes to Client");
-        send(new String(contents), States.SyncCheck);
+        boolean ready = false;
 
-        //Stage receive needed Filenames
-        System.out.println("Waiting for needed filelist");
-        String neededFiles = receive();
+        start(PORT);
 
-    }
 
-    public static void main(String[] args){
-        boolean connected = false;
-        Server server = new Server();
+        while (true) {
 
-        while(!connected) {
             try {
-                connected = server.start(PORT);
+                connect();
+
+                //Stage Authentication
+                if(!authenticate()) {
+                    stop();
+                    continue;
+                }
+
+                //Stage exchange filetree
+
+
             } catch (IOException e) {
                 e.printStackTrace();
             }
         }
 
+    }
+
+    public static void main(String[] args) throws IOException{
+        Server server = new Server();
+        server.runProtocol();
         /*try{
             server.runProtocol();
         } catch (IOException e){
