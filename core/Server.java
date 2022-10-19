@@ -26,7 +26,6 @@ public class Server {
 
     private boolean fileStreamOpen = false;
 
-    private List<String> loadedFiles = new ArrayList<String>();
     private HashMap<String, byte[]> files = new HashMap<String, byte[]>();
 
     private void send(String content, byte state) throws IOException{
@@ -110,46 +109,52 @@ public class Server {
     }
 
     public boolean fileDownload() throws IOException{
+
         //(2:1)
-        Packet fileRequest = receive();
+        Packet fileRequestHeader = receive(); //Header packet
 
-        if(!isValidCookie(fileRequest.getShortCookie())){
-            System.out.println("Client provided invalid cookie, quitting...");
-            return false;
-        }
-        if(fileRequest.state == States.Debug && fileRequest.data[0] == 0b00001010){
-            System.out.println("Client indicated end of file download phase");
-            fileStreamOpen = false;
-            return true;
-        }
-        if(fileRequest.state != States.FileDownload){
-            System.out.println("Client is in wrong state, quitting...");
-            return false;
-        }
-        if(!(fileRequest.data[0] > 8)){
-            System.out.println("Client provided invalid chunk format, quitting...");
-            return false;
-        }
+        while (fileRequestHeader.data[0] != DebugCodes.FileDownloadEnd && fileRequestHeader.state != States.Debug) {
 
-        byte[] data = fileRequest.data;
+            if (!isValidCookie(fileRequestHeader.getShortCookie())) {
+                System.out.println("Client provided invalid cookie, quitting...");
+                return false;
+            }
+            if (fileRequestHeader.state != States.FileDownload) {
+                System.out.println("Client is in wrong state, quitting...");
+                return false;
+            }
+            if (!(fileRequestHeader.data[0] > 8)) {
+                System.out.println("Client provided invalid chunk format, quitting...");
+                return false;
+            }
 
-        byte chunkId = data[0];
-        byte chunkCount = data[1];
-        byte[] bFilename = Arrays.copyOfRange(data, 2, data.length);
-        String filename = new String(bFilename, StandardCharsets.UTF_8);
+            byte[] data = fileRequestHeader.data;
 
-        if(!loadedFiles.contains(filename)){
-            loadedFiles.add(filename);
+            byte chunkCount = data[0];
+
+            byte[] bFilename = Arrays.copyOfRange(data, 1, data.length);
+            String filename = new String(bFilename, StandardCharsets.UTF_8);
+
+
             files.put(filename, ByteUtils.readFileToBytes(Paths.get("Shared/" + filename)));
+
+            int chunkSize = files.get(filename).length / chunkCount;
+
+            //(2:2)
+            Packet chunkRequest = receive();
+
+            while (chunkRequest.data[0] != DebugCodes.FileEnd && chunkRequest.state != States.Debug) {
+                byte chunkId = chunkRequest.data[0];
+                byte[] chunk = Arrays.copyOfRange(files.get(filename), chunkSize * (chunkId - 1), chunkSize * chunkId);
+
+                Packet chunkPacket = new Packet((short) (ByteUtils.PAYLOAD_LENGTH + chunk.length), States.FileDownload, (short) 0, chunk);
+                //(2:3)
+                send(chunkPacket);
+                chunkRequest = receive();
+            }
+
+            fileRequestHeader = receive();
         }
-
-        int chunkSize = files.get(filename).length / chunkCount;
-
-        byte[] chunk = Arrays.copyOfRange(files.get(filename), chunkSize * (chunkId - 1), chunkSize * chunkId);
-
-        Packet chunkPacket = new Packet((short)(ByteUtils.PAYLOAD_LENGTH + chunk.length), States.FileDownload, (short) 0, chunk);
-        //(2:2)
-        send(chunkPacket);
         return true;
     }
 
@@ -176,6 +181,9 @@ public class Server {
             } else {
                 System.out.println(filename + " exists already");
             }
+
+            FileWriter fileWriter = new FileWriter(filename);
+
         } catch (IOException e){
             System.out.println("Could not create " + filename);
             e.printStackTrace();
