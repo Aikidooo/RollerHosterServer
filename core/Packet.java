@@ -12,8 +12,8 @@ public class Packet {
     public final byte cookieFirst;
     public final byte cookieSecond;
 
-    private final byte[] payload;
-    private final byte[] data;
+    public final byte[] payload;
+    public final byte[] data;
 
     private byte[] packet;
 

@@ -6,7 +6,10 @@ import java.net.*;
 import java.io.*;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
+import java.util.List;
 
 //GitHub: https://github.com/Aikidooo/RollerHoster
 //Protocol reference:  https://github.com/Aikidooo/RollerHoster/blob/master/protocoll.txt
@@ -20,6 +23,11 @@ public class Server {
 
     private static final int PORT = 6969;
     private short cookie = 0b0000000000000000;
+
+    private boolean fileStreamOpen = false;
+
+    private List<String> loadedFiles = new ArrayList<String>();
+    private HashMap<String, byte[]> files = new HashMap<String, byte[]>();
 
     private void send(String content, byte state) throws IOException{
         byte[] bContent = content.getBytes(StandardCharsets.UTF_8);
@@ -64,10 +72,14 @@ public class Server {
     //Protocol (0:X)
     public boolean authenticate() throws IOException{
         //(0:1)
-        String token = receive().getStringData();
-        System.out.println(token);
-        if(!isAuth(token)){
+        Packet token = receive();
+        System.out.println(token.getStringData());
+        if(!isAuth(token.getStringData())){
             System.out.println("Client is not authenticated, quitting...");
+            return false;
+        }
+        if(token.state != States.Authentication){
+            System.out.println("Client is in wrong state, quitting...");
             return false;
         }
         System.out.println("Client authenticated successfully");
@@ -79,10 +91,97 @@ public class Server {
     }
 
     public boolean fileTreeExchange() throws IOException{
+        //(1:1)
+        Packet clientRequest = receive();
+        if(!isValidCookie(clientRequest.getShortCookie())){
+            System.out.println("Client provided invalid cookie, quitting...");
+            return false;
+        }
+        if(clientRequest.state != States.ExchangeFiletree || clientRequest.data[0] != 0){
+            System.out.println("Client is in wrong state, quitting...");
+            return false;
+        }
 
         String contents = Files.readString(Paths.get("resources/FileIndex.txt"));
         System.out.println("Sending filetree to Client");
-        send(new String(contents), States.SyncCheck);
+        //(1:2)
+        send(contents, States.ExchangeFiletree);
+        return true;
+    }
+
+    public boolean fileDownload() throws IOException{
+        //(2:1)
+        Packet fileRequest = receive();
+
+        if(!isValidCookie(fileRequest.getShortCookie())){
+            System.out.println("Client provided invalid cookie, quitting...");
+            return false;
+        }
+        if(fileRequest.state == States.Debug && fileRequest.data[0] == 0b00001010){
+            System.out.println("Client indicated end of file download phase");
+            fileStreamOpen = false;
+            return true;
+        }
+        if(fileRequest.state != States.FileDownload){
+            System.out.println("Client is in wrong state, quitting...");
+            return false;
+        }
+        if(!(fileRequest.data[0] > 8)){
+            System.out.println("Client provided invalid chunk format, quitting...");
+            return false;
+        }
+
+        byte[] data = fileRequest.data;
+
+        byte chunkId = data[0];
+        byte chunkCount = data[1];
+        byte[] bFilename = Arrays.copyOfRange(data, 2, data.length);
+        String filename = new String(bFilename, StandardCharsets.UTF_8);
+
+        if(!loadedFiles.contains(filename)){
+            loadedFiles.add(filename);
+            files.put(filename, ByteUtils.readFileToBytes(Paths.get("Shared/" + filename)));
+        }
+
+        int chunkSize = files.get(filename).length / chunkCount;
+
+        byte[] chunk = Arrays.copyOfRange(files.get(filename), chunkSize * (chunkId - 1), chunkSize * chunkId);
+
+        Packet chunkPacket = new Packet((short)(ByteUtils.PAYLOAD_LENGTH + chunk.length), States.FileDownload, (short) 0, chunk);
+        //(2:2)
+        send(chunkPacket);
+        return true;
+    }
+
+    public boolean fileUpload() throws IOException{
+        Packet header = receive();
+
+        if(!isValidCookie(header.getShortCookie())){
+            System.out.println("Client provided invalid cookie, quitting...");
+            return false;
+        }
+        if(header.state != States.FileUpload){
+            System.out.println("Client is in wrong state, quitting...");
+            return false;
+        }
+
+        byte chunkCount = header.data[0];
+        byte[] bFilename = Arrays.copyOfRange(header.data, 1, header.data.length);
+        String filename = new String(bFilename, StandardCharsets.UTF_8);
+
+        try {
+            File file = new File(filename);
+            if(file.createNewFile()){
+                System.out.println("Created " + filename);
+            } else {
+                System.out.println(filename + " exists already");
+            }
+        } catch (IOException e){
+            System.out.println("Could not create " + filename);
+            e.printStackTrace();
+        }
+
+
         return true;
     }
 
@@ -98,11 +197,7 @@ public class Server {
         try {
             String token = Files.readString(Paths.get("resources/token.txt"), StandardCharsets.UTF_8);
 
-            if (authToken.equals(token)){
-                return true;
-            } else{
-                return false;
-            }
+            return authToken.equals(token);
 
         } catch(IOException e) {
             e.printStackTrace();
@@ -119,41 +214,43 @@ public class Server {
     }
 
     public void runProtocol() throws IOException{
-        boolean ready = false;
-
         start(PORT);
 
-
         while (true) {
-
             try {
                 connect();
 
-                //Stage Authentication
+                //Stage authentication
                 if(!authenticate()) {
                     stop();
                     continue;
                 }
-
                 //Stage exchange filetree
+                if(!fileTreeExchange()){
+                    stop();
+                    continue;
+                }
+                //Stage file download
+                fileStreamOpen = true;
+                while(fileDownload() && fileStreamOpen);
+                if(fileStreamOpen){
+                    stop();
+                    continue;
+                }
+                //Stage file upload
 
 
             } catch (IOException e) {
                 e.printStackTrace();
+                stop();
             }
         }
-
     }
 
     public static void main(String[] args) throws IOException{
         Server server = new Server();
         server.runProtocol();
-        /*try{
-            server.runProtocol();
-        } catch (IOException e){
-            e.printStackTrace();
-        }*/
-        System.out.println("Finished Interaction");
 
+        System.out.println("Finished Interaction");
     }
 }

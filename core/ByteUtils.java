@@ -1,6 +1,10 @@
 package core;
 
-public class ByteUtils {
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+
+public abstract class ByteUtils {
     public static final byte PAYLOAD_LENGTH = 0b00000101; //5
 
     public static short combine(byte b1, byte b2) {
@@ -11,6 +15,8 @@ public class ByteUtils {
     }                               //               10101010
                                     //      ----------------- (bitwise OR comparison)
                                     //      11111111 10101010
-
+    public static byte[] readFileToBytes(Path path) throws IOException {
+        return Files.readAllBytes(path);
+    }
 }
 
