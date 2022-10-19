@@ -6,10 +6,8 @@ import java.net.*;
 import java.io.*;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
-import java.util.List;
 
 //GitHub: https://github.com/Aikidooo/RollerHoster
 //Protocol reference:  https://github.com/Aikidooo/RollerHoster/blob/master/protocoll.txt
@@ -24,9 +22,9 @@ public class Server {
     private static final int PORT = 6969;
     private short cookie = 0b0000000000000000;
 
-    private boolean fileStreamOpen = false;
 
-    private HashMap<String, byte[]> files = new HashMap<String, byte[]>();
+
+    private final HashMap<String, byte[]> files = new HashMap<>();
 
     private void send(String content, byte state) throws IOException{
         byte[] bContent = content.getBytes(StandardCharsets.UTF_8);
@@ -155,41 +153,62 @@ public class Server {
 
             fileRequestHeader = receive();
         }
+        files.clear();
         return true;
     }
 
     public boolean fileUpload() throws IOException{
-        Packet header = receive();
+        //(3:1)
+        Packet fileUploadHeader = receive();
 
-        if(!isValidCookie(header.getShortCookie())){
-            System.out.println("Client provided invalid cookie, quitting...");
-            return false;
-        }
-        if(header.state != States.FileUpload){
-            System.out.println("Client is in wrong state, quitting...");
-            return false;
-        }
 
-        byte chunkCount = header.data[0];
-        byte[] bFilename = Arrays.copyOfRange(header.data, 1, header.data.length);
-        String filename = new String(bFilename, StandardCharsets.UTF_8);
-
-        try {
-            File file = new File(filename);
-            if(file.createNewFile()){
-                System.out.println("Created " + filename);
-            } else {
-                System.out.println(filename + " exists already");
+        while (fileUploadHeader.data[0] != DebugCodes.FileDownloadEnd && fileUploadHeader.state != States.Debug) {
+            if (!isValidCookie(fileUploadHeader.getShortCookie())) {
+                System.out.println("Client provided invalid cookie, quitting...");
+                return false;
+            }
+            if (fileUploadHeader.state != States.FileUpload) {
+                System.out.println("Client is in wrong state, quitting...");
+                return false;
             }
 
-            FileWriter fileWriter = new FileWriter(filename);
+            byte[] data = fileUploadHeader.data;
 
-        } catch (IOException e){
-            System.out.println("Could not create " + filename);
-            e.printStackTrace();
+            byte chunkCount = data[0];
+
+            byte[] bFilename = Arrays.copyOfRange(data, 1, data.length);
+            String filename = new String(bFilename, StandardCharsets.UTF_8);
+
+            try {
+                File file = new File(filename);
+                if (file.createNewFile()) {
+                    System.out.println("Created " + filename);
+                } else {
+                    System.out.println(filename + " exists already");
+                }
+
+            } catch (IOException e) {
+                System.out.println("Could not create " + filename);
+                e.printStackTrace();
+                continue;
+            }
+
+            FileOutputStream fileWriter = new FileOutputStream(filename, true);
+
+            Packet chunkUpload = receive();
+
+            while (chunkUpload.data[0] != DebugCodes.FileEnd && chunkUpload.state != States.Debug) {
+                byte[] uploadData = chunkUpload.data;
+
+                byte chunkId = uploadData[0];
+                byte[] chunkData = Arrays.copyOfRange(uploadData, 1, uploadData.length);
+
+                fileWriter.write(chunkData);
+
+                chunkUpload = receive();
+            }
+
         }
-
-
         return true;
     }
 
@@ -222,7 +241,6 @@ public class Server {
     }
 
     public void runProtocol() throws IOException{
-        start(PORT);
 
         while (true) {
             try {
@@ -239,14 +257,15 @@ public class Server {
                     continue;
                 }
                 //Stage file download
-                fileStreamOpen = true;
-                while(fileDownload() && fileStreamOpen);
-                if(fileStreamOpen){
+                if(!fileDownload()){
                     stop();
                     continue;
                 }
                 //Stage file upload
-
+                if(!fileUpload()){
+                    stop();
+                    continue;
+                }
 
             } catch (IOException e) {
                 e.printStackTrace();
@@ -257,6 +276,7 @@ public class Server {
 
     public static void main(String[] args) throws IOException{
         Server server = new Server();
+        server.start(PORT);
         server.runProtocol();
 
         System.out.println("Finished Interaction");

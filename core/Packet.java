@@ -17,7 +17,7 @@ public class Packet {
 
     private byte[] packet;
 
-    public Packet(short packetLength, byte state, short cookie, byte[] data){
+    Packet(short packetLength, byte state, short cookie, byte[] data){
         String binaryPacketLength = Integer.toBinaryString(0xFFFF & packetLength);
         String binaryCookie = Integer.toBinaryString(0xFFFF & cookie);
 
@@ -35,7 +35,7 @@ public class Packet {
         this.payload = combinePayload();
     }
     //Overload constructor with received packet processing
-    public Packet(byte[] packet){
+    Packet(byte[] packet){
         this.packet = packet;
 
         this.payload = Arrays.copyOfRange(packet, 0, ByteUtils.PAYLOAD_LENGTH);
