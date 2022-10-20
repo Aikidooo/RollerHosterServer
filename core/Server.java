@@ -99,7 +99,10 @@ public class Server {
             return false;
         }
 
-        String contents = Files.readString(Paths.get("resources/FileIndex.txt"));
+        FileTree fileTree = new FileTree("Shared");
+        fileTree.map();
+        fileTree.safe("resources/FileIndex.txt");
+        String contents = fileTree.get();
         System.out.println("Sending filetree to Client");
         //(1:2)
         send(contents, States.ExchangeFiletree);
@@ -111,6 +114,7 @@ public class Server {
         //(2:1)
         Packet fileRequestHeader = receive(); //Header packet
 
+        //loop through all file requests until the debug packet is sent
         while (fileRequestHeader.data[0] != DebugCodes.FileDownloadEnd && fileRequestHeader.state != States.Debug) {
 
             if (!isValidCookie(fileRequestHeader.getShortCookie())) {
@@ -140,7 +144,7 @@ public class Server {
 
             //(2:2)
             Packet chunkRequest = receive();
-
+            //loop through all chunks of current file until the debug packet is sent
             while (chunkRequest.data[0] != DebugCodes.FileEnd && chunkRequest.state != States.Debug) {
                 byte chunkId = chunkRequest.data[0];
                 byte[] chunk = Arrays.copyOfRange(files.get(filename), chunkSize * (chunkId - 1), chunkSize * chunkId);

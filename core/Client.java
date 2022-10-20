@@ -76,7 +76,7 @@ public class Client {
         }
         try {
             System.out.println("Sending ");
-            client.sendMessage("I WANT ALL", States.FileTransfer);
+            //client.sendMessage("I WANT ALL", States.FileTransfer);
             System.out.println("Awaiting server index files");
             String r = client.receiveMessage();
             System.out.println("Server has " + r);
