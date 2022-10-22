@@ -13,7 +13,7 @@ import java.util.HashMap;
 //GitHub: https://github.com/Aikidooo/RollerHoster
 //Protocol reference:  https://github.com/Aikidooo/RollerHoster/blob/master/protocoll.txt
 
-public class Server {
+public class Server{
     private JSONObject config;
     private int PORT;
     private String TOKEN;
@@ -49,7 +49,7 @@ public class Server {
         Packet packet = new Packet(data);
 
         if(!isValidCookie(packet.getShortCookie()) && packet.state != States.Authentication) {
-            stop();
+            close();
         }
 
         return packet;
@@ -231,7 +231,7 @@ public class Server {
         return true;
     }
 
-    public void stop() throws IOException{
+    public void close() throws IOException{
         in.close();
         out.close();
         clientSocket.close();
@@ -251,48 +251,58 @@ public class Server {
         return cookie == this.cookie;
     }
 
-    public void runProtocol() throws IOException{ //multithreaded :/
-
-        while (true) {
-            try {
-                connect();
-
-                //Stage authentication
-                if(!authenticate()) {
-                    stop();
-                    continue;
-                }
-                //Stage exchange filetree
-                if(!fileTreeExchange()){
-                    stop();
-                    continue;
-                }
-                //Stage file download
-                if(!fileDownload()){
-                    stop();
-                    continue;
-                }
-                //Stage file upload
-                if(!fileUpload()){
-                    stop();
-                    continue;
-                }
-
-            } catch (IOException e) {
-                e.printStackTrace();
-                stop();
-            } finally {
-                stop();
+    public void runProtocol() throws IOException{
+        try {
+            //Stage authentication
+            if(!authenticate()) {
+                close();
+                return;
+            }
+            //Stage exchange filetree
+            if(!fileTreeExchange()){
+                close();
+                return;
+            }
+            //Stage file download
+            if(!fileDownload()){
+                close();
+                return;
+            }
+            //Stage file upload
+            if(!fileUpload()){
+                close();
+                return;
             }
 
+        } catch (IOException e) {
+            e.printStackTrace();
+            close();
+        } finally {
+            close();
         }
     }
+
 
     public static void main(String[] args) throws IOException{
         Server server = new Server();
         server.start();
-        server.runProtocol();
 
-        System.out.println("Finished Interaction");
+        while(true){
+            server.connect();
+            Thread clientThread = new Thread(new Runnable() {
+                @Override
+                public void run() {
+                    try {
+                        server.runProtocol();
+                    } catch (IOException e) {
+                        e.printStackTrace();
+                        //TODO: When the connection close fails, throw an exception in the parent class
+                    }
+                }
+            });
+            clientThread.start();
+            //TODO: Implement thread specific cookies and sockets, maybe separate server and clientRequest
+        }
+
     }
 }
