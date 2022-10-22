@@ -114,7 +114,7 @@ public class Server {
         //(2:1)
         Packet fileRequestHeader = receive(); //Header packet
 
-        //loop through all file requests until the debug packet is sent
+        //loop through all file requests until the debug packet is sent:
         while (fileRequestHeader.data[0] != DebugCodes.FileDownloadEnd && fileRequestHeader.state != States.Debug) {
 
             if (!isValidCookie(fileRequestHeader.getShortCookie())) {

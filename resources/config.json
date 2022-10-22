@@ -1,0 +1,13 @@
+{
+    "server": {
+        "host": "",
+        "port": 6969
+    },
+    "authentication": {
+        "token": ""
+    },
+    "environment": {
+        "shared_dir": "Shared/",
+        "upload_dir": "Upload/"
+    }
+}
