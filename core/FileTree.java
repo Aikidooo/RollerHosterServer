@@ -10,7 +10,7 @@ import java.util.stream.Stream;
 
 public class FileTree {
     private final String directory;
-     private String fileTree = "";
+    private String fileTree = "";
 
     FileTree(String directory){
         this.directory = directory;

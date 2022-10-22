@@ -2,6 +2,7 @@ package core;
 
 import core.fields.*;
 
+import org.json.JSONObject;
 import java.net.*;
 import java.io.*;
 import java.nio.charset.StandardCharsets;
@@ -13,16 +14,17 @@ import java.util.HashMap;
 //Protocol reference:  https://github.com/Aikidooo/RollerHoster/blob/master/protocoll.txt
 
 public class Server {
+    private JSONObject config;
+    private int PORT;
+    private String TOKEN;
+    private String SHARED_DIR;
+
     private ServerSocket server;
     private Socket clientSocket;
     private OutputStream out;
     private BufferedInputStream in;
 
-
-    private static final int PORT = 6969;
     private short cookie = 0b0000000000000000;
-
-
 
     private final HashMap<String, byte[]> files = new HashMap<>();
 
@@ -53,14 +55,27 @@ public class Server {
         return packet;
     }
 
-    public void start(int port) throws IOException{
-        server = new ServerSocket(port);
+    private void init() throws IOException{
+        config = Config.parseConfig();
+
+        JSONObject server = config.getJSONObject("server");
+        JSONObject authentication = config.getJSONObject("authentication");
+        JSONObject environment = config.getJSONObject("environment");
+
+        PORT = server.getInt("port");
+        TOKEN = authentication.getString("token");
+        SHARED_DIR = environment.getString("shared_dir");
+    }
+
+    public void start() throws IOException{
+        init();
+        server = new ServerSocket(PORT);
         System.out.println("Waiting for connection");
     }
 
     public void connect() throws IOException {
         clientSocket = server.accept();
-        System.out.println("Client " + clientSocket.getInetAddress() + " connected");
+        System.out.println("Client " + clientSocket.getInetAddress().getHostAddress() + " connected");
 
         in = new BufferedInputStream(clientSocket.getInputStream());
         out = clientSocket.getOutputStream();
@@ -99,7 +114,7 @@ public class Server {
             return false;
         }
 
-        FileTree fileTree = new FileTree("Shared");
+        FileTree fileTree = new FileTree(SHARED_DIR);
         fileTree.map();
         fileTree.safe("resources/FileIndex.txt");
         String contents = fileTree.get();
@@ -138,7 +153,7 @@ public class Server {
             String filename = new String(bFilename, StandardCharsets.UTF_8);
 
 
-            files.put(filename, ByteUtils.readFileToBytes(Paths.get("Shared/" + filename)));
+            files.put(filename, ByteUtils.readFileToBytes(Paths.get(SHARED_DIR + filename)));
 
             int chunkSize = files.get(filename).length / chunkCount;
 
@@ -224,16 +239,8 @@ public class Server {
         cookie = 0b0000000000000000;
     }
 
-    private boolean isAuth(String authToken) {
-        try {
-            String token = Files.readString(Paths.get("resources/token.txt"), StandardCharsets.UTF_8);
-
-            return authToken.equals(token);
-
-        } catch(IOException e) {
-            e.printStackTrace();
-            return false;
-        }
+    private boolean isAuth(String token) {
+        return token.equals(TOKEN);
     }
 
     private short generateCookie(){
@@ -274,13 +281,16 @@ public class Server {
             } catch (IOException e) {
                 e.printStackTrace();
                 stop();
+            } finally {
+                stop();
             }
+
         }
     }
 
     public static void main(String[] args) throws IOException{
         Server server = new Server();
-        server.start(PORT);
+        server.start();
         server.runProtocol();
 
         System.out.println("Finished Interaction");
