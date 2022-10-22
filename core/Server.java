@@ -251,7 +251,7 @@ public class Server {
         return cookie == this.cookie;
     }
 
-    public void runProtocol() throws IOException{
+    public void runProtocol() throws IOException{ //multithreaded :/
 
         while (true) {
             try {
