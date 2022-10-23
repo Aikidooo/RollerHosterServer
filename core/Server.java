@@ -235,7 +235,6 @@ public class Server {
         in.close();
         out.close();
         clientSocket.close();
-        server.close();
         cookie = 0b0000000000000000;
     }
 
