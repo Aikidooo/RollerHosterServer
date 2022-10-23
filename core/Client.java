@@ -44,6 +44,7 @@ public class Client {
         out.write(both);
 
     }
+
     public String receiveMessage() throws IOException{
         byte[] rawData = new byte[10000];
         int readNum = in.read(rawData);
@@ -70,18 +71,6 @@ public class Client {
             client.startConnection("localhost", 6969);
             System.out.println("Sending authentication token");
             client.sendMessage("NiceToEatYou", States.Authentication);
-
-        } catch(IOException e){
-            e.printStackTrace();
-        }
-        try {
-            System.out.println("Sending ");
-            //client.sendMessage("I WANT ALL", States.FileTransfer);
-            System.out.println("Awaiting server index files");
-            String r = client.receiveMessage();
-            System.out.println("Server has " + r);
-            System.out.println("Sending needed files");
-            System.out.println(client.receiveMessage());
 
         } catch(IOException e){
             e.printStackTrace();

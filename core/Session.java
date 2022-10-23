@@ -1,32 +1,74 @@
 package core;
 
-import core.fields.*;
-
+import core.fields.DebugCodes;
+import core.fields.States;
 import org.json.JSONObject;
-import java.net.*;
+
 import java.io.*;
+import java.net.*;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.*;
+import java.nio.file.Paths;
 import java.util.Arrays;
 import java.util.HashMap;
 
-//GitHub: https://github.com/Aikidooo/RollerHoster
-//Protocol reference:  https://github.com/Aikidooo/RollerHoster/blob/master/protocoll.txt
+public class Session implements Runnable{
 
-public class Server{
-    private JSONObject config;
-    private int PORT;
+    ///////////////DECLARATION///////////////
+
+    private final JSONObject config;
+    //private int PORT;
     private String TOKEN;
     private String SHARED_DIR;
 
-    private ServerSocket server;
-    private Socket clientSocket;
-    private OutputStream out;
-    private BufferedInputStream in;
+    private final Socket clientSocket;
+    private final OutputStream out;
+    private final BufferedInputStream in;
+
+    ///////////////INITIALIZATION///////////////
 
     private short cookie = 0b0000000000000000;
 
     private final HashMap<String, byte[]> files = new HashMap<>();
+
+    Session(Socket clientSocket, JSONObject config, short cookie) throws IOException{
+        this.clientSocket = clientSocket;
+        this.config = config;
+        this.cookie = cookie;
+
+        init();
+
+        in = new BufferedInputStream(clientSocket.getInputStream());
+        out = clientSocket.getOutputStream();
+    }
+
+    @Override
+    public void run(){
+        try {
+            runProtocol();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
+    private void init() throws IOException{
+
+        //JSONObject server = config.getJSONObject("server");
+        JSONObject authentication = config.getJSONObject("authentication");
+        JSONObject environment = config.getJSONObject("environment");
+
+        //PORT = server.getInt("port");
+        TOKEN = authentication.getString("token");
+        SHARED_DIR = environment.getString("shared_dir");
+    }
+
+    public void close() throws IOException{
+        in.close();
+        out.close();
+        clientSocket.close();
+        cookie = 0b0000000000000000;
+    }
+
+    ///////////////NETWORK-COMMUNICATION///////////////
 
     private void send(String content, byte state) throws IOException{
         byte[] bContent = content.getBytes(StandardCharsets.UTF_8);
@@ -55,29 +97,37 @@ public class Server{
         return packet;
     }
 
-    private void init() throws IOException{
+    ///////////////PROTOCOL-EXECUTION///////////////
 
-        JSONObject server = config.getJSONObject("server");
-        JSONObject authentication = config.getJSONObject("authentication");
-        JSONObject environment = config.getJSONObject("environment");
+    public void runProtocol() throws IOException{
+        try {
+            //Stage authentication
+            if(!authenticate()) {
+                close();
+                return;
+            }
+            //Stage exchange filetree
+            if(!fileTreeExchange()){
+                close();
+                return;
+            }
+            //Stage file download
+            if(!fileDownload()){
+                close();
+                return;
+            }
+            //Stage file upload
+            if(!fileUpload()){
+                close();
+                return;
+            }
 
-        PORT = server.getInt("port");
-        TOKEN = authentication.getString("token");
-        SHARED_DIR = environment.getString("shared_dir");
-    }
-
-    public void start() throws IOException{
-        init();
-        server = new ServerSocket(PORT);
-        System.out.println("Waiting for connection");
-    }
-
-    public void connect() throws IOException {
-        clientSocket = server.accept();
-        System.out.println("Client " + clientSocket.getInetAddress().getHostAddress() + " connected");
-
-        in = new BufferedInputStream(clientSocket.getInputStream());
-        out = clientSocket.getOutputStream();
+        } catch (IOException e) {
+            e.printStackTrace();
+            close();
+        } finally {
+            close();
+        }
     }
 
     //Protocol (0:X)
@@ -94,7 +144,6 @@ public class Server{
             return false;
         }
         System.out.println("Client authenticated successfully");
-        cookie = generateCookie();
 
         //(0:2)
         send(Short.toString(cookie), States.Authentication);
@@ -230,78 +279,13 @@ public class Server{
         return true;
     }
 
-    public void close() throws IOException{
-        in.close();
-        out.close();
-        clientSocket.close();
-        cookie = 0b0000000000000000;
-    }
-
-    private boolean isAuth(String token) {
-        return token.equals(TOKEN);
-    }
-
-    private short generateCookie(){
-        return (short)(Math.random() * (Short.MAX_VALUE + 1));
-    }
+    ///////////////VALIDATION///////////////
 
     private boolean isValidCookie(short cookie){
         return cookie == this.cookie;
     }
 
-    public void runProtocol() throws IOException{
-        try {
-            //Stage authentication
-            if(!authenticate()) {
-                close();
-                return;
-            }
-            //Stage exchange filetree
-            if(!fileTreeExchange()){
-                close();
-                return;
-            }
-            //Stage file download
-            if(!fileDownload()){
-                close();
-                return;
-            }
-            //Stage file upload
-            if(!fileUpload()){
-                close();
-                return;
-            }
-
-        } catch (IOException e) {
-            e.printStackTrace();
-            close();
-        } finally {
-            close();
-        }
-    }
-
-
-    public static void main(String[] args) throws IOException{
-        Server server = new Server();
-        server.config = Config.parseConfig();
-        server.start();
-
-        while(true){
-            server.connect();
-            Thread clientThread = new Thread(new Runnable() {
-                @Override
-                public void run() {
-                    try {
-                        server.runProtocol();
-                    } catch (IOException e) {
-                        e.printStackTrace();
-                        //TODO: When the connection close fails, throw an exception in the parent class
-                    }
-                }
-            });
-            clientThread.start();
-            //TODO: Implement thread specific cookies and sockets, maybe separate server and clientRequest
-        }
-
+    private boolean isAuth(String token) {
+        return token.equals(TOKEN);
     }
 }
