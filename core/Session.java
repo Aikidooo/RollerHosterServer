@@ -5,7 +5,7 @@ import core.fields.States;
 import org.json.JSONObject;
 
 import java.io.*;
-import java.net.*;
+import java.net.Socket;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Paths;
 import java.util.Arrays;
@@ -24,9 +24,11 @@ public class Session implements Runnable{
     private final OutputStream out;
     private final BufferedInputStream in;
 
-    ///////////////INITIALIZATION///////////////
+    private final short cookie;
+    private final String clientAddr;
+    private byte state;
 
-    private short cookie;
+    ///////////////INITIALIZATION///////////////
 
     private final HashMap<String, byte[]> files = new HashMap<>();
 
@@ -34,6 +36,8 @@ public class Session implements Runnable{
         this.clientSocket = clientSocket;
         this.config = config;
         this.cookie = cookie;
+        this.clientAddr = clientSocket.getInetAddress().getHostAddress();
+        this.state = States.None;
 
         init();
 
@@ -100,7 +104,7 @@ public class Session implements Runnable{
 
     ///////////////PROTOCOL-EXECUTION///////////////
 
-    public boolean runProtocol() throws IOException{
+    private boolean runProtocol() throws IOException{
         try {
             //Stage authentication
             if(!authenticate()) {
@@ -133,7 +137,8 @@ public class Session implements Runnable{
     }
 
     //Protocol (0:X)
-    public boolean authenticate() throws IOException{
+    private boolean authenticate() throws IOException{
+        state = States.Authentication;
         //(0:1)
         Packet token = receive();
         System.out.println(token.getStringData());
@@ -141,25 +146,26 @@ public class Session implements Runnable{
             System.out.println("Client is not authenticated, quitting...");
             return false;
         }
-        if(token.state != States.Authentication){
+        if(token.state != state){
             System.out.println("Client is in wrong state, quitting...");
             return false;
         }
         System.out.println("Client authenticated successfully");
 
         //(0:2)
-        send(Short.toString(cookie), States.Authentication);
+        send(Short.toString(cookie), state);
         return true;
     }
     //Protocol (1:X)
-    public boolean fileTreeExchange() throws IOException{
+    private boolean fileTreeExchange() throws IOException{
+        state = States.ExchangeFiletree;
         //(1:1)
         Packet clientRequest = receive();
         if(!isValidCookie(clientRequest.getShortCookie())){
             System.out.println("Client provided invalid cookie, quitting...");
             return false;
         }
-        if(clientRequest.state != States.ExchangeFiletree || clientRequest.data[0] != 0){
+        if(clientRequest.state != state || clientRequest.data[0] != 0){
             System.out.println("Client is in wrong state, quitting...");
             return false;
         }
@@ -170,12 +176,12 @@ public class Session implements Runnable{
         String contents = fileTree.get();
         System.out.println("Sending filetree to Client");
         //(1:2)
-        send(contents, States.ExchangeFiletree);
+        send(contents, state);
         return true;
     }
     //Protocol (2:X)
-    public boolean fileDownload() throws IOException{
-
+    private boolean fileDownload() throws IOException{
+        state = States.FileDownload;
         //(2:1)
         Packet fileRequestHeader = receive(); //Header packet
 
@@ -186,7 +192,7 @@ public class Session implements Runnable{
                 System.out.println("Client provided invalid cookie, quitting...");
                 return false;
             }
-            if (fileRequestHeader.state != States.FileDownload) {
+            if (fileRequestHeader.state != state) {
                 System.out.println("Client is in wrong state, quitting...");
                 return false;
             }
@@ -214,7 +220,7 @@ public class Session implements Runnable{
                 byte chunkId = chunkRequest.data[0];
                 byte[] chunk = Arrays.copyOfRange(files.get(filename), chunkSize * (chunkId - 1), chunkSize * chunkId);
 
-                Packet chunkPacket = new Packet((short) (ByteUtils.PAYLOAD_LENGTH + chunk.length), States.FileDownload, (short) 0, chunk);
+                Packet chunkPacket = new Packet((short) (ByteUtils.PAYLOAD_LENGTH + chunk.length), state, (short) 0, chunk);
                 //(2:3)
                 send(chunkPacket);
                 chunkRequest = receive();
@@ -226,7 +232,8 @@ public class Session implements Runnable{
         return true;
     }
     //Protocol (3:X)
-    public boolean fileUpload() throws IOException{
+    private boolean fileUpload() throws IOException{
+        state = States.FileUpload;
         //(3:1)
         Packet fileUploadHeader = receive();
 
@@ -236,7 +243,7 @@ public class Session implements Runnable{
                 System.out.println("Client provided invalid cookie, quitting...");
                 return false;
             }
-            if (fileUploadHeader.state != States.FileUpload) {
+            if (fileUploadHeader.state != state) {
                 System.out.println("Client is in wrong state, quitting...");
                 return false;
             }
@@ -289,5 +296,19 @@ public class Session implements Runnable{
 
     private boolean isAuth(String token) {
         return token.equals(TOKEN);
+    }
+
+    ///////////////GETTERS///////////////
+
+    public short getCookie() {
+        return cookie;
+    }
+
+    public String getClientAddr() {
+        return clientAddr;
+    }
+
+    public byte getState() {
+        return state;
     }
 }
