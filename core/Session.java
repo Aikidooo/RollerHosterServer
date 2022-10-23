@@ -26,7 +26,7 @@ public class Session implements Runnable{
 
     ///////////////INITIALIZATION///////////////
 
-    private short cookie = 0b0000000000000000;
+    private short cookie;
 
     private final HashMap<String, byte[]> files = new HashMap<>();
 
@@ -44,9 +44,11 @@ public class Session implements Runnable{
     @Override
     public void run(){
         try {
-            runProtocol();
+            boolean successful = runProtocol();
+            Server.endSession(cookie, successful);
         } catch (IOException e) {
             e.printStackTrace();
+            Server.endSession(cookie, false);
         }
     }
 
@@ -65,7 +67,6 @@ public class Session implements Runnable{
         in.close();
         out.close();
         clientSocket.close();
-        cookie = 0b0000000000000000;
     }
 
     ///////////////NETWORK-COMMUNICATION///////////////
@@ -99,32 +100,33 @@ public class Session implements Runnable{
 
     ///////////////PROTOCOL-EXECUTION///////////////
 
-    public void runProtocol() throws IOException{
+    public boolean runProtocol() throws IOException{
         try {
             //Stage authentication
             if(!authenticate()) {
                 close();
-                return;
+                return false;
             }
             //Stage exchange filetree
             if(!fileTreeExchange()){
                 close();
-                return;
+                return false;
             }
             //Stage file download
             if(!fileDownload()){
                 close();
-                return;
+                return false;
             }
             //Stage file upload
             if(!fileUpload()){
                 close();
-                return;
+                return false;
             }
+            return false;
 
         } catch (IOException e) {
             e.printStackTrace();
-            close();
+            return false;
         } finally {
             close();
         }
