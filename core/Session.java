@@ -31,6 +31,7 @@ public class Session extends Server implements Runnable{
     ///////////////INITIALIZATION///////////////
 
     private final HashMap<String, byte[]> files = new HashMap<>();
+    private final Logger logger = new Logger("SESSION");
 
     Session(Socket clientSocket, JSONObject config, short cookie) throws IOException{
         this.clientSocket = clientSocket;
@@ -43,6 +44,8 @@ public class Session extends Server implements Runnable{
 
         in = new BufferedInputStream(clientSocket.getInputStream());
         out = clientSocket.getOutputStream();
+
+        logger.log("INFO", "Started new session");
     }
 
     @Override
@@ -71,6 +74,7 @@ public class Session extends Server implements Runnable{
         in.close();
         out.close();
         clientSocket.close();
+        logger.log("INFO", "Connection closed");
     }
 
     ///////////////NETWORK-COMMUNICATION///////////////
@@ -82,10 +86,13 @@ public class Session extends Server implements Runnable{
         Packet packet = new Packet((short)(ByteUtils.PAYLOAD_LENGTH + content.length()), state, cookie, bContent);
 
         out.write(packet.get());
+
+        logger.log("INFO", "Sent packet in state " + packet.state);
     }
 
     private void send(Packet packet) throws IOException{
         out.write(packet.get());
+        logger.log("INFO", "Sent packet in state " + packet.state);
     }
 
     private Packet receive() throws IOException{
@@ -99,6 +106,8 @@ public class Session extends Server implements Runnable{
             close();
         }
 
+        logger.log("INFO", "Received packet in state " + packet.state);
+
         return packet;
     }
 
@@ -111,21 +120,25 @@ public class Session extends Server implements Runnable{
                 close();
                 return false;
             }
+            logger.log("INFO", "Finished authentication.\n");
             //Stage exchange filetree
             if(!fileTreeExchange()){
                 close();
                 return false;
             }
+            logger.log("INFO", "Finished filetree exchange.\n");
             //Stage file download
             if(!fileDownload()){
                 close();
                 return false;
             }
+            logger.log("INFO", "Finished file downloading.\n");
             //Stage file upload
             if(!fileUpload()){
                 close();
                 return false;
             }
+            logger.log("INFO", "Finished file uploading. Protocol finished. \n");
             return false;
 
         } catch (IOException e) {
@@ -143,14 +156,14 @@ public class Session extends Server implements Runnable{
         Packet token = receive();
         System.out.println(token.getStringData());
         if(!isAuth(token.getStringData())){
-            System.out.println("Client is not authenticated, quitting...");
+            logger.log("WARNING", "Client is not authenticated, quitting...");
             return false;
         }
         if(token.state != state){
-            System.out.println("Client is in wrong state, quitting...");
+            logger.log("WARNING", "Client is in wrong state, quitting...");
             return false;
         }
-        System.out.println("Client authenticated successfully");
+        logger.log("INFO", "Client authenticated successfully");
 
         //(0:2)
         send(Short.toString(cookie), state);
@@ -162,11 +175,11 @@ public class Session extends Server implements Runnable{
         //(1:1)
         Packet clientRequest = receive();
         if(!isValidCookie(clientRequest.getShortCookie())){
-            System.out.println("Client provided invalid cookie, quitting...");
+            logger.log("WARNING", "Client provided invalid cookie, quitting...");
             return false;
         }
         if(clientRequest.state != state || clientRequest.data[0] != 0){
-            System.out.println("Client is in wrong state, quitting...");
+            logger.log("WARNING", "Client is in wrong state, quitting...");
             return false;
         }
 
@@ -174,7 +187,7 @@ public class Session extends Server implements Runnable{
         fileTree.map();
         fileTree.safe("resources/FileIndex.txt");
         String contents = fileTree.get();
-        System.out.println("Sending filetree to Client");
+        logger.log("INFO", "Sending filetree to Client");
         //(1:2)
         send(contents, state);
         return true;
@@ -189,15 +202,15 @@ public class Session extends Server implements Runnable{
         while (fileRequestHeader.data[0] != DebugCodes.FileDownloadEnd && fileRequestHeader.state != States.Debug) {
 
             if (!isValidCookie(fileRequestHeader.getShortCookie())) {
-                System.out.println("Client provided invalid cookie, quitting...");
+                logger.log("WARNING", "Client provided invalid cookie, quitting...");
                 return false;
             }
             if (fileRequestHeader.state != state) {
-                System.out.println("Client is in wrong state, quitting...");
+                logger.log("WARNING", "Client is in wrong state, quitting...");
                 return false;
             }
             if (!(fileRequestHeader.data[0] > 8)) {
-                System.out.println("Client provided invalid chunk format, quitting...");
+                logger.log("WARNING", "Client provided invalid chunk format, quitting...");
                 return false;
             }
 
@@ -208,6 +221,7 @@ public class Session extends Server implements Runnable{
             byte[] bFilename = Arrays.copyOfRange(data, 1, data.length);
             String filename = new String(bFilename, StandardCharsets.UTF_8);
 
+            logger.log("INFO", "Currently reading and sending file " + filename);
 
             files.put(filename, ByteUtils.readFileToBytes(Paths.get(SHARED_DIR + filename)));
 
@@ -240,11 +254,11 @@ public class Session extends Server implements Runnable{
 
         while (fileUploadHeader.data[0] != DebugCodes.FileDownloadEnd && fileUploadHeader.state != States.Debug) {
             if (!isValidCookie(fileUploadHeader.getShortCookie())) {
-                System.out.println("Client provided invalid cookie, quitting...");
+                logger.log("WARNING", "Client provided invalid cookie, quitting...");
                 return false;
             }
             if (fileUploadHeader.state != state) {
-                System.out.println("Client is in wrong state, quitting...");
+                logger.log("WARNING", "Client is in wrong state, quitting...");
                 return false;
             }
 
@@ -255,16 +269,18 @@ public class Session extends Server implements Runnable{
             byte[] bFilename = Arrays.copyOfRange(data, 1, data.length);
             String filename = new String(bFilename, StandardCharsets.UTF_8);
 
+            logger.log("INFO", "Currently receiving and saving file " + filename);
+
             try {
                 File file = new File(filename);
                 if (file.createNewFile()) {
-                    System.out.println("Created " + filename);
+                    logger.log("INFO", "Created " + filename);
                 } else {
-                    System.out.println(filename + " exists already");
+                    logger.log("WARNING", filename + " exists already");
                 }
 
             } catch (IOException e) {
-                System.out.println("Could not create " + filename);
+                logger.log("ERROR", "Could not create " + filename);
                 e.printStackTrace();
                 continue;
             }

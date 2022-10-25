@@ -11,6 +11,7 @@ import java.net.Socket;
 import java.util.ArrayList;
 import java.util.List;
 
+
 //GitHub: https://github.com/Aikidooo/RollerHoster
 //Protocol reference:  https://github.com/Aikidooo/RollerHoster/blob/master/protocoll.txt
 
@@ -21,10 +22,11 @@ public class Server{
     private ServerSocket serverSocket;
 
     public static List<Session> sessions = new ArrayList<>();
+    private final Logger logger = new Logger("SERVER");
 
     public void start() throws IOException{
         serverSocket = new ServerSocket(PORT);
-        System.out.println("Waiting for connection");
+        logger.log("INFO", "Waiting for connection");
 
         config = Config.parseConfig();
         PORT = config.getJSONObject("server").getInt("port");
@@ -32,7 +34,7 @@ public class Server{
 
     public Session connect() throws IOException {
         Socket clientSocket = serverSocket.accept();
-        System.out.println("Client " + clientSocket.getInetAddress().getHostAddress() + " connected");
+        logger.log("INFO", "Client " + clientSocket.getInetAddress().getHostAddress() + " connected");
 
         short sessionCookie = generateCookie();
         Session clientSession = new Session(clientSocket, config, sessionCookie);
@@ -47,17 +49,8 @@ public class Server{
     }
 
     public static void endSession(short cookie, boolean successfully){
-        System.out.println("Thread with session ID " + cookie + " terminated " + (successfully ? "successfully." : " unsuccessfully."));
+        Logger.logGlobal((successfully ? "INFO" : " WARNING"), "Thread with session ID " + cookie + " terminated " + (successfully ? "successfully." : " unsuccessfully."));
         sessions.remove(cookie);
-    }
-
-    public static void printSessions(){
-        System.out.println("Current sessions:\n");
-        for(Session s : sessions){
-            System.out.println(s.getClientAddr());
-            System.out.println("\tSessionId: " + s.getCookie());
-            System.out.println("\tState: " + States.get(s.getState()) + "(" + s.getState() + ")");
-        }
     }
 
     public static void main(String[] args) throws IOException{
@@ -74,7 +67,7 @@ public class Server{
             clientThread = new Thread(clientSession);
             clientThread.start();
 
-            printSessions();
+            Logger.printSessions();
         }
 
     }
