@@ -2,7 +2,6 @@ package core;
 
 import core.fields.Config;
 
-import core.fields.States;
 import org.json.JSONObject;
 
 import java.io.IOException;
@@ -16,23 +15,31 @@ import java.util.List;
 //Protocol reference:  https://github.com/Aikidooo/RollerHoster/blob/master/protocoll.txt
 
 public class Server{
+    ///////////////DECLARATION///////////////
+
     private JSONObject config;
     private int PORT;
 
     private ServerSocket serverSocket;
 
+    ///////////////INITIALIZATION///////////////
+
     public static List<Session> sessions = new ArrayList<>();
-    private final Logger logger = new Logger("SERVER");
+    private final Logger logger = new Logger("Server");
 
     public void start() throws IOException{
+        config = Config.parseConfig();
+        PORT = config.getJSONObject("server").getInt("port");
+
+        logger.log("DEBUG", "Starting on port " + PORT);
         serverSocket = new ServerSocket(PORT);
         logger.log("INFO", "Waiting for connection");
 
-        config = Config.parseConfig();
-        PORT = config.getJSONObject("server").getInt("port");
     }
 
-    public Session connect() throws IOException {
+    ///////////////NETWORK///////////////
+
+    public Session accept() throws IOException {
         Socket clientSocket = serverSocket.accept();
         logger.log("INFO", "Client " + clientSocket.getInetAddress().getHostAddress() + " connected");
 
@@ -48,9 +55,11 @@ public class Server{
         return (short)(Math.random() * (Short.MAX_VALUE + 1));
     }
 
-    public static void endSession(short cookie, boolean successfully){
-        Logger.logGlobal((successfully ? "INFO" : " WARNING"), "Thread with session ID " + cookie + " terminated " + (successfully ? "successfully." : " unsuccessfully."));
-        sessions.remove(cookie);
+    ///////////////THREADING///////////////
+
+    public static void endSession(Session session, boolean successfully){
+        Logger.logGlobal((successfully ? "INFO" : " WARNING"), "Thread with session ID " + session.getCookie() + " terminated " + (successfully ? "successfully." : " unsuccessfully."));
+        sessions.remove(session);
     }
 
     public static void main(String[] args) throws IOException{
@@ -61,13 +70,11 @@ public class Server{
         Session clientSession;
 
         while(true){
-
-            clientSession = server.connect();
-
+            clientSession = server.accept();
+            Logger.printSessions();
             clientThread = new Thread(clientSession);
             clientThread.start();
 
-            Logger.printSessions();
         }
 
     }

@@ -31,7 +31,7 @@ public class Session extends Server implements Runnable{
     ///////////////INITIALIZATION///////////////
 
     private final HashMap<String, byte[]> files = new HashMap<>();
-    private final Logger logger = new Logger("SESSION");
+    private final Logger logger = new Logger("Session");
 
     Session(Socket clientSocket, JSONObject config, short cookie) throws IOException{
         this.clientSocket = clientSocket;
@@ -52,14 +52,14 @@ public class Session extends Server implements Runnable{
     public void run(){
         try {
             boolean successful = runProtocol();
-            endSession(cookie, successful);
+            endSession(this, successful);
         } catch (IOException e) {
             e.printStackTrace();
-            endSession(cookie, false);
+            endSession(this, false);
         }
     }
 
-    private void init() throws IOException{
+    private void init() {
 
         //JSONObject server = config.getJSONObject("server");
         JSONObject authentication = config.getJSONObject("authentication");
@@ -75,24 +75,22 @@ public class Session extends Server implements Runnable{
         out.close();
         clientSocket.close();
         logger.log("INFO", "Connection closed");
+        endSession(this, true);
     }
 
     ///////////////NETWORK-COMMUNICATION///////////////
 
     private void send(String content, byte state) throws IOException{
         byte[] bContent = content.getBytes(StandardCharsets.UTF_8);
-        System.out.println(new String(bContent, StandardCharsets.UTF_8));
 
         Packet packet = new Packet((short)(ByteUtils.PAYLOAD_LENGTH + content.length()), state, cookie, bContent);
-
         out.write(packet.get());
-
-        logger.log("INFO", "Sent packet in state " + packet.state);
+        logger.log("INFO", "Sent packet in state (" + packet.state + ") " + States.get(packet.state));
     }
 
     private void send(Packet packet) throws IOException{
         out.write(packet.get());
-        logger.log("INFO", "Sent packet in state " + packet.state);
+        logger.log("INFO", "Sent packet in state (" + packet.state + ") " + States.get(packet.state));
     }
 
     private Packet receive() throws IOException{
@@ -102,11 +100,12 @@ public class Session extends Server implements Runnable{
 
         Packet packet = new Packet(data);
 
-        if(!isValidCookie(packet.getShortCookie()) && packet.state != States.Authentication) {
+        if(isInvalidCookie(packet.getShortCookie()) && packet.state != States.Authentication) {
+            logger.log("WARNING", "Invalid cookie.");
             close();
         }
 
-        logger.log("INFO", "Received packet in state " + packet.state);
+        logger.log("INFO", "Received packet in state (" + packet.state + ") " + States.get(packet.state));
 
         return packet;
     }
@@ -117,32 +116,41 @@ public class Session extends Server implements Runnable{
         try {
             //Stage authentication
             if(!authenticate()) {
+                logger.log("WARNING", "Authentication failed.");
                 close();
                 return false;
             }
             logger.log("INFO", "Finished authentication.\n");
+
             //Stage exchange filetree
             if(!fileTreeExchange()){
+                logger.log("WARNING", "Filetree exchange failed.");
                 close();
                 return false;
             }
             logger.log("INFO", "Finished filetree exchange.\n");
+
             //Stage file download
             if(!fileDownload()){
+                logger.log("WARNING", "File download failed.");
                 close();
                 return false;
             }
             logger.log("INFO", "Finished file downloading.\n");
+
             //Stage file upload
             if(!fileUpload()){
+                logger.log("WARNING", "File upload failed.");
                 close();
                 return false;
             }
+
             logger.log("INFO", "Finished file uploading. Protocol finished. \n");
-            return false;
+            return true;
 
         } catch (IOException e) {
             e.printStackTrace();
+            logger.log("ERROR", "Protocol failed.");
             return false;
         } finally {
             close();
@@ -151,10 +159,10 @@ public class Session extends Server implements Runnable{
 
     //Protocol (0:X)
     private boolean authenticate() throws IOException{
+        logger.log("INFO", "Beginning authentication.");
         state = States.Authentication;
         //(0:1)
         Packet token = receive();
-        System.out.println(token.getStringData());
         if(!isAuth(token.getStringData())){
             logger.log("WARNING", "Client is not authenticated, quitting...");
             return false;
@@ -171,10 +179,11 @@ public class Session extends Server implements Runnable{
     }
     //Protocol (1:X)
     private boolean fileTreeExchange() throws IOException{
+        logger.log("INFO", "Beginning filetree exchange.");
         state = States.ExchangeFiletree;
         //(1:1)
         Packet clientRequest = receive();
-        if(!isValidCookie(clientRequest.getShortCookie())){
+        if(isInvalidCookie(clientRequest.getShortCookie())){
             logger.log("WARNING", "Client provided invalid cookie, quitting...");
             return false;
         }
@@ -201,7 +210,7 @@ public class Session extends Server implements Runnable{
         //loop through all file requests until the debug packet is sent:
         while (fileRequestHeader.data[0] != DebugCodes.FileDownloadEnd && fileRequestHeader.state != States.Debug) {
 
-            if (!isValidCookie(fileRequestHeader.getShortCookie())) {
+            if (isInvalidCookie(fileRequestHeader.getShortCookie())) {
                 logger.log("WARNING", "Client provided invalid cookie, quitting...");
                 return false;
             }
@@ -253,7 +262,7 @@ public class Session extends Server implements Runnable{
 
 
         while (fileUploadHeader.data[0] != DebugCodes.FileDownloadEnd && fileUploadHeader.state != States.Debug) {
-            if (!isValidCookie(fileUploadHeader.getShortCookie())) {
+            if (isInvalidCookie(fileUploadHeader.getShortCookie())) {
                 logger.log("WARNING", "Client provided invalid cookie, quitting...");
                 return false;
             }
@@ -264,7 +273,7 @@ public class Session extends Server implements Runnable{
 
             byte[] data = fileUploadHeader.data;
 
-            byte chunkCount = data[0];
+            //byte chunkCount = data[0];
 
             byte[] bFilename = Arrays.copyOfRange(data, 1, data.length);
             String filename = new String(bFilename, StandardCharsets.UTF_8);
@@ -292,7 +301,7 @@ public class Session extends Server implements Runnable{
             while (chunkUpload.data[0] != DebugCodes.FileEnd && chunkUpload.state != States.Debug) {
                 byte[] uploadData = chunkUpload.data;
 
-                byte chunkId = uploadData[0];
+                //byte chunkId = uploadData[0];
                 byte[] chunkData = Arrays.copyOfRange(uploadData, 1, uploadData.length);
 
                 fileWriter.write(chunkData);
@@ -306,8 +315,8 @@ public class Session extends Server implements Runnable{
 
     ///////////////VALIDATION///////////////
 
-    private boolean isValidCookie(short cookie){
-        return cookie == this.cookie;
+    private boolean isInvalidCookie(short cookie){
+        return cookie != this.cookie;
     }
 
     private boolean isAuth(String token) {

@@ -68,7 +68,7 @@ public class Client {
     public static void main(String[] args){
         Client client = new Client();
         try {
-            client.startConnection("localhost", 6969);
+            client.startConnection("localhost", 10000);
             System.out.println("Sending authentication token");
             client.sendMessage("NiceToEatYou", States.Authentication);
 
