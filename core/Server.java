@@ -15,10 +15,10 @@ import java.util.List;
 //Protocol reference:  https://github.com/Aikidooo/RollerHoster/blob/master/protocoll.txt
 
 public class Server{
-    public JSONObject config;
-    public int PORT;
+    private JSONObject config;
+    private int PORT;
 
-    public ServerSocket serverSocket;
+    private ServerSocket serverSocket;
 
     public static List<Session> sessions = new ArrayList<>();
 

@@ -11,7 +11,7 @@ import java.nio.file.Paths;
 import java.util.Arrays;
 import java.util.HashMap;
 
-public class Session implements Runnable{
+public class Session extends Server implements Runnable{
 
     ///////////////DECLARATION///////////////
 
@@ -49,10 +49,10 @@ public class Session implements Runnable{
     public void run(){
         try {
             boolean successful = runProtocol();
-            Server.endSession(cookie, successful);
+            endSession(cookie, successful);
         } catch (IOException e) {
             e.printStackTrace();
-            Server.endSession(cookie, false);
+            endSession(cookie, false);
         }
     }
 
